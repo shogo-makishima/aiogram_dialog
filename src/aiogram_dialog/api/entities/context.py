@@ -15,6 +15,7 @@ class Context:
     start_data: Data = field(compare=False)
     dialog_data: DataDict = field(compare=False, default_factory=dict)
     widget_data: DataDict = field(compare=False, default_factory=dict)
+    path: DataDict = field(compare=False, default_factory=list)
 
     @property
     def id(self):
