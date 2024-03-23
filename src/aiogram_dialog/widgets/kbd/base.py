@@ -1,11 +1,14 @@
-from typing import List, Optional, Union
+from abc import abstractmethod
+from typing import Optional, Union
 
-from aiogram.types import CallbackQuery, InlineKeyboardButton
+from aiogram.types import CallbackQuery
 
-from aiogram_dialog.api.internal import KeyboardWidget
+from aiogram_dialog.api.internal import KeyboardWidget, RawKeyboard
 from aiogram_dialog.api.protocols import DialogManager, DialogProtocol
 from aiogram_dialog.widgets.common import (
-    Actionable, Whenable, WhenCondition,
+    Actionable,
+    Whenable,
+    WhenCondition,
 )
 
 
@@ -18,7 +21,7 @@ class Keyboard(Actionable, Whenable, KeyboardWidget):
             self,
             data,
             manager: DialogManager,
-    ) -> List[List[InlineKeyboardButton]]:
+    ) -> RawKeyboard:
         """
         Create inline keyboard contents.
 
@@ -29,11 +32,12 @@ class Keyboard(Actionable, Whenable, KeyboardWidget):
             return []
         return await self._render_keyboard(data, manager)
 
+    @abstractmethod
     async def _render_keyboard(
             self,
-            data,
+            data: dict,
             manager: DialogManager,
-    ) -> List[List[InlineKeyboardButton]]:
+    ) -> RawKeyboard:
         """
         Create inline keyboard contents.
 
@@ -46,7 +50,7 @@ class Keyboard(Actionable, Whenable, KeyboardWidget):
             return None
         return f"{self.widget_id}:"
 
-    def _own_callback_data(self):
+    def _own_callback_data(self) -> Union[str, None]:
         """Create callback data for only button in widget."""
         return self.widget_id
 
@@ -107,3 +111,57 @@ class Keyboard(Actionable, Whenable, KeyboardWidget):
         Can be used for layouts
         """
         return False
+
+    def __or__(self, other: "Keyboard") -> "Or":
+        # reduce nesting
+        if isinstance(other, Or):
+            return NotImplemented
+        return Or(self, other)
+
+    def __ror__(self, other: "Keyboard") -> "Or":
+        # reduce nesting
+        return Or(other, self)
+
+
+class Or(Keyboard):
+    def __init__(self, *widgets: Keyboard):
+        super().__init__()
+        self.widgets = widgets
+
+    async def _render_keyboard(
+            self, data: dict, manager: DialogManager,
+    ) -> RawKeyboard:
+        for widget in self.widgets:
+            res = await widget.render_keyboard(data, manager)
+            if res and any(res):
+                return res
+        return []
+
+    async def _process_other_callback(
+            self,
+            callback: CallbackQuery,
+            dialog: DialogProtocol,
+            manager: DialogManager,
+    ) -> bool:
+        for b in self.widgets:
+            if await b.process_callback(callback, dialog, manager):
+                return True
+        return False
+
+    def __ior__(self, other: Keyboard) -> "Or":
+        self.widgets += (other,)
+        return self
+
+    def __or__(self, other: Keyboard) -> "Or":
+        # reduce nesting
+        return Or(*self.widgets, other)
+
+    def __ror__(self, other: Keyboard) -> "Or":
+        # reduce nesting
+        return Or(other, *self.widgets)
+
+    def find(self, widget_id: str) -> Optional[Keyboard]:
+        for text in self.widgets:
+            if found := text.find(widget_id):
+                return found
+        return None

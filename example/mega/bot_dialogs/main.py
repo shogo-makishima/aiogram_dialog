@@ -1,9 +1,6 @@
-from aiogram_dialog import (
-    Dialog, Window, LaunchMode,
-)
-from aiogram_dialog.widgets.kbd import (
-    Start,
-)
+from aiogram_dialog import Dialog, LaunchMode, Window
+from aiogram_dialog.about import about_aiogram_dialog_button
+from aiogram_dialog.widgets.kbd import Start
 from aiogram_dialog.widgets.text import Const
 from . import states
 
@@ -36,6 +33,22 @@ main_dialog = Dialog(
             id="counter",
             state=states.Counter.MAIN,
         ),
+        Start(
+            text=Const("🎛 Combining widgets"),
+            id="multiwidget",
+            state=states.Multiwidget.MAIN,
+        ),
+        Start(
+            text=Const("🔢 Multiple steps"),
+            id="switch",
+            state=states.Switch.MAIN,
+        ),
+        Start(
+            text=Const("⌨️ Reply keyboard"),
+            id="reply",
+            state=states.ReplyKeyboard.MAIN,
+        ),
+        about_aiogram_dialog_button(),
         state=states.Main.MAIN,
     ),
     launch_mode=LaunchMode.ROOT,

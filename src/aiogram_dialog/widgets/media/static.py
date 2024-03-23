@@ -1,4 +1,5 @@
-from typing import Any, Dict, Optional, Union
+from pathlib import Path
+from typing import Optional, Union
 
 from aiogram.types import ContentType
 
@@ -13,18 +14,20 @@ class StaticMedia(Media):
     def __init__(
             self,
             *,
-            path: Union[Text, str, None] = None,
+            path: Union[Text, str, Path, None] = None,
             url: Union[Text, str, None] = None,
             type: ContentType = ContentType.PHOTO,
             use_pipe: bool = False,
-            media_params: Dict = None,
+            media_params: dict = None,
             when: WhenCondition = None,
     ):
         super().__init__(when=when)
         if not (url or path):
             raise ValueError("Neither url nor path are provided")
         self.type = type
-        if isinstance(path, str):
+        if isinstance(path, Path):
+            path = Const(str(path))
+        elif isinstance(path, str):
             path = Const(path)
         self.path = path
         if isinstance(url, str):
@@ -34,7 +37,7 @@ class StaticMedia(Media):
         self.media_params = media_params or {}
 
     async def _render_media(
-            self, data: Any, manager: DialogManager,
+            self, data: dict, manager: DialogManager,
     ) -> Optional[MediaAttachment]:
         if self.url:
             url = await self.url.render_text(data, manager)

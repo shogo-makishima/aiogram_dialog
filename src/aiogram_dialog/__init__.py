@@ -1,12 +1,3 @@
-from .api.entities import (
-    ChatEvent, Data, DEFAULT_STACK_ID, LaunchMode, ShowMode, StartMode,
-)
-from .api.protocols import BaseDialogManager, DialogManager, DialogProtocol
-from .dialog import Dialog
-from .manager.setup import setup_dialogs
-from .manager.sub_manager import SubManager
-from .window import Window
-
 __all__ = [
     "DEFAULT_STACK_ID",
     "Dialog",
@@ -15,6 +6,7 @@ __all__ = [
     "LaunchMode",
     "StartMode",
     "BaseDialogManager",
+    "BgManagerFactory",
     "DialogManager",
     "DialogProtocol",
     "setup_dialogs",
@@ -22,3 +14,18 @@ __all__ = [
     "SubManager",
     "Window",
 ]
+
+import importlib.metadata as _metadata
+
+from .api.entities import (
+    ChatEvent, Data, DEFAULT_STACK_ID, LaunchMode, ShowMode, StartMode,
+)
+from .api.protocols import (
+    BaseDialogManager, BgManagerFactory, DialogManager, DialogProtocol,
+)
+from .dialog import Dialog
+from .manager.sub_manager import SubManager
+from .setup import setup_dialogs
+from .window import Window
+
+__version__ = _metadata.version("aiogram-dialog")

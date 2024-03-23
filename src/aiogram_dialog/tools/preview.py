@@ -6,10 +6,15 @@ from typing import Any, Dict, List, Optional, Type
 
 from aiogram import Router
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Chat, ContentType, Message, User
+from aiogram.types import (
+    CallbackQuery, Chat, ContentType, InlineKeyboardMarkup, Message,
+    ReplyKeyboardMarkup, User,
+)
 from jinja2 import Environment, PackageLoader, select_autoescape
 
-from aiogram_dialog import Dialog, DialogManager, DialogProtocol
+from aiogram_dialog import (
+    BaseDialogManager, Dialog, DialogManager, DialogProtocol,
+)
 from aiogram_dialog.api.entities import (
     ChatEvent,
     Context,
@@ -22,7 +27,9 @@ from aiogram_dialog.api.entities import (
     Stack,
     StartMode,
 )
-from aiogram_dialog.manager.setup import collect_dialogs
+from aiogram_dialog.api.exceptions import NoContextError
+from aiogram_dialog.setup import collect_dialogs
+from aiogram_dialog.utils import split_reply_callback
 
 
 @dataclass
@@ -35,7 +42,9 @@ class RenderButton:
 class RenderWindow:
     message: str
     state: str
+    state_name: str
     keyboard: List[List[RenderButton]]
+    reply_keyboard: List[List[RenderButton]]
     photo: Optional[str]
     text_input: Optional[RenderButton]
     attachment_input: Optional[RenderButton]
@@ -48,12 +57,13 @@ class RenderDialog:
 
 
 class FakeManager(DialogManager):
-    async def answer_callback(self) -> None:
-        pass
 
     def __init__(self):
         self._event = DialogUpdateEvent(
-            from_user=User(id=1, is_bot=False, first_name="Fake"),
+            from_user=User(
+                id=1, is_bot=False, first_name="Fake",
+                language_code="en",
+            ),
             chat=Chat(id=1, type="private"),
             action=DialogAction.UPDATE,
             data={},
@@ -67,6 +77,18 @@ class FakeManager(DialogManager):
             "event_chat": Chat(id=1, type="private"),
             "event_from_user": User(id=1, is_bot=False, first_name="Fake"),
         }
+
+    async def next(self, show_mode: Optional[ShowMode] = None) -> None:
+        states = self._dialog.states()
+        current_index = states.index(self.current_context().state)
+        new_state = states[current_index + 1]
+        await self.switch_to(new_state, show_mode)
+
+    async def back(self, show_mode: Optional[ShowMode] = None) -> None:
+        states = self._dialog.states()
+        current_index = states.index(self.current_context().state)
+        new_state = states[current_index - 1]
+        await self.switch_to(new_state, show_mode)
 
     @property
     def data(self) -> Dict:
@@ -90,7 +112,7 @@ class FakeManager(DialogManager):
         self.reset_context()
 
     def set_state(self, state: State):
-        self._context.state = state
+        self.current_context().state = state
 
     def is_preview(self) -> bool:
         return True
@@ -104,7 +126,7 @@ class FakeManager(DialogManager):
 
     @property
     def dialog_data(self) -> Dict:
-        return self._context.dialog_data
+        return self.current_context().dialog_data
 
     def reset_context(self) -> None:
         self._context = Context(
@@ -116,7 +138,11 @@ class FakeManager(DialogManager):
             state=State(),
         )
 
-    async def switch_to(self, state: State) -> None:
+    async def switch_to(
+            self,
+            state: State,
+            show_mode: Optional[ShowMode] = None,
+    ) -> None:
         self.set_state(state)
 
     async def start(
@@ -128,30 +154,81 @@ class FakeManager(DialogManager):
     ) -> None:
         self.set_state(state)
 
-    async def done(self, result: Any = None) -> None:
+    async def done(
+            self,
+            result: Any = None,
+            show_mode: Optional[ShowMode] = None,
+    ) -> None:
         self.set_state(State("-"))
 
-    def current_stack(self) -> Optional[Stack]:
+    def current_stack(self) -> Stack:
         return Stack()
 
-    def current_context(self) -> Optional[Context]:
+    def current_context(self) -> Context:
+        if not self._context:
+            raise NoContextError
         return self._context
+
+    def has_context(self) -> bool:
+        return bool(self._context)
 
     async def show_raw(self) -> NewMessage:
         return await self._dialog.render(self)
 
+    async def mark_closed(self) -> None:
+        pass
+
+    @property
+    def start_data(self) -> Data:
+        return {}
+
+    @property
+    def show_mode(self) -> ShowMode:
+        return ShowMode.AUTO
+
+    @show_mode.setter
+    def show_mode(self, show_mode: ShowMode) -> None:
+        return
+
+    async def show(self, show_mode: Optional[ShowMode] = None) -> None:
+        pass
+
+    def find(self, widget_id) -> Optional[Any]:
+        widget = self._dialog.find(widget_id)
+        if not widget:
+            return None
+        return widget.managed(self)
+
+    async def update(
+            self,
+            data: Dict,
+            show_mode: Optional[ShowMode] = None,
+    ) -> None:
+        pass
+
+    def bg(
+            self,
+            user_id: Optional[int] = None, chat_id: Optional[int] = None,
+            stack_id: Optional[str] = None, load: bool = False,
+    ) -> BaseDialogManager:
+        return self
+
+    async def answer_callback(self) -> None:
+        pass
+
 
 def create_photo(media: Optional[MediaAttachment]) -> Optional[str]:
     if not media:
-        return
+        return None
     if media.type != ContentType.PHOTO:
-        return
+        return None
     if media.url:
         return media.url
     if media.path:
         return media.path
     if media.file_id:
         return str(media.file_id)
+    return None
 
 
 async def create_button(
@@ -216,19 +293,15 @@ async def render_input(
     )
 
 
-async def create_window(
+async def render_inline_keyboard(
         state: State,
-        message: NewMessage,
+        reply_markup: InlineKeyboardMarkup,
         manager: FakeManager,
         dialog: Dialog,
         simulate_events: bool,
-) -> RenderWindow:
-    if message.parse_mode is None or message.parse_mode == "None":
-        text = html.escape(message.text)
-    else:
-        text = message.text
+):
     keyboard = []
-    for row in message.reply_markup.inline_keyboard:
+    for row in reply_markup.inline_keyboard:
         keyboard_row = []
         for button in row:
             keyboard_row.append(
@@ -242,12 +315,69 @@ async def create_window(
                 ),
             )
         keyboard.append(keyboard_row)
+    return keyboard
+
+
+async def render_reply_keyboard(
+        state: State,
+        reply_markup: ReplyKeyboardMarkup,
+        manager: FakeManager,
+        dialog: Dialog,
+        simulate_events: bool,
+):
+    # TODO simulate events using keyboard
+    keyboard = []
+    for row in reply_markup.keyboard:
+        keyboard_row = []
+        for button in row:
+            text, data = split_reply_callback(button.text)
+            keyboard_row.append(
+                await create_button(
+                    title=text,
+                    callback=data,
+                    manager=manager,
+                    dialog=dialog,
+                    state=state,
+                    simulate_events=simulate_events,
+                ),
+            )
+        keyboard.append(keyboard_row)
+    return keyboard
+
+
+async def create_window(
+        state: State,
+        message: NewMessage,
+        manager: FakeManager,
+        dialog: Dialog,
+        simulate_events: bool,
+) -> RenderWindow:
+    if message.parse_mode is None or message.parse_mode == "None":
+        text = html.escape(message.text)
+    else:
+        text = message.text
+
+    if isinstance(message.reply_markup, InlineKeyboardMarkup):
+        keyboard = await render_inline_keyboard(
+            state, message.reply_markup, manager, dialog, simulate_events,
+        )
+        reply_keyboard = []
+    elif isinstance(message.reply_markup, ReplyKeyboardMarkup):
+        keyboard = []
+        reply_keyboard = await render_reply_keyboard(
+            state, message.reply_markup, manager, dialog, simulate_events,
+        )
+    else:
+        keyboard = []
+        reply_keyboard = []
 
     return RenderWindow(
         message=text.replace("\n", "<br>"),
         state=state.state,
+        state_name=state._state,
         photo=create_photo(media=message.media),
         keyboard=keyboard,
+        reply_keyboard=reply_keyboard,
         text_input=await render_input(
             manager=manager,
             state=state,
@@ -286,7 +416,7 @@ async def render_dialog(
             ),
         )
 
-    return RenderDialog(state_group=str(group), windows=windows)
+    return RenderDialog(state_group=str(group.__qualname__), windows=windows)
 
 
 async def render_preview_content(

@@ -12,18 +12,19 @@ from typing import (
 )
 
 from aiogram import Router
-from aiogram.exceptions import TelegramAPIError
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, Message
 
 from aiogram_dialog.api.entities import Data, LaunchMode, NewMessage
-from aiogram_dialog.api.exceptions import UnregisteredWindowError
+from aiogram_dialog.api.exceptions import (
+    UnregisteredWindowError,
+)
 from aiogram_dialog.api.internal import Widget, WindowProtocol
 from aiogram_dialog.api.protocols import (
     DialogManager, DialogProtocol,
 )
 from .context.intent_filter import IntentFilter
-from .utils import add_indent_id, remove_indent_id
+from .utils import remove_intent_id
 from .widgets.data import PreviewAwareGetter
 from .widgets.utils import ensure_data_getter, GetterVariant
 
@@ -33,10 +34,6 @@ ChatEvent = Union[CallbackQuery, Message]
 OnDialogEvent = Callable[[Any, DialogManager], Awaitable]
 OnResultEvent = Callable[[Data, Any, DialogManager], Awaitable]
 W = TypeVar("W", bound=Widget)
-
-_INVALUD_QUERY_ID_MSG = (
-    "query is too old and response timeout expired or query id is invalid"
-)
 
 
 class Dialog(Router, DialogProtocol):
@@ -49,8 +46,9 @@ class Dialog(Router, DialogProtocol):
             launch_mode: LaunchMode = LaunchMode.STANDARD,
             getter: GetterVariant = None,
             preview_data: GetterVariant = None,
+            name: Optional[str] = None,
     ):
-        super().__init__()
+        super().__init__(name=name or windows[0].get_state().group.__name__)
         self._states_group = windows[0].get_state().group
         self._states: List[State] = []
         for w in windows:
@@ -86,7 +84,7 @@ class Dialog(Router, DialogProtocol):
     async def process_start(
             self,
             manager: DialogManager,
-            start_data: Any,
+            start_data: Data,
             state: Optional[State] = None,
     ) -> None:
         if state is None:
@@ -123,38 +121,32 @@ class Dialog(Router, DialogProtocol):
         logger.debug("Dialog render (%s)", self)
         window = await self._current_window(manager)
         new_message = await window.render(self, manager)
-        add_indent_id(new_message, manager.current_context().id)
         return new_message
 
     async def _message_handler(
             self, message: Message, dialog_manager: DialogManager,
     ):
-        intent = dialog_manager.current_context()
+        old_context = dialog_manager.current_context()
         window = await self._current_window(dialog_manager)
         await window.process_message(message, self, dialog_manager)
-        if dialog_manager.current_context() == intent:  # no new dialog started
-            await dialog_manager.show()
+        if dialog_manager.has_context():
+            if dialog_manager.current_context() == old_context:  # same dialog
+                await dialog_manager.show()
 
     async def _callback_handler(
             self,
             callback: CallbackQuery,
             dialog_manager: DialogManager,
     ):
-        intent = dialog_manager.current_context()
-        intent_id, callback_data = remove_indent_id(callback.data)
-        cleaned_callback = callback.copy(update={"data": callback_data})
+        old_context = dialog_manager.current_context()
+        intent_id, callback_data = remove_intent_id(callback.data)
+        cleaned_callback = callback.model_copy(update={"data": callback_data})
         window = await self._current_window(dialog_manager)
         await window.process_callback(cleaned_callback, self, dialog_manager)
-        if dialog_manager.current_context() == intent:  # no new dialog started
-            await dialog_manager.show()
-        if not dialog_manager.is_preview():
-            try:
-                await dialog_manager.answer_callback()
-            except TelegramAPIError as e:
-                if _INVALUD_QUERY_ID_MSG in e.message:
-                    logger.warning("Cannot answer callback: %s", e)
-                else:
-                    raise
+        if dialog_manager.has_context():
+            if dialog_manager.current_context() == old_context:  # same dialog
+                await dialog_manager.show()
+        await dialog_manager.answer_callback()
 
     def _setup_filter(self):
         intent_filter = IntentFilter(
@@ -179,14 +171,21 @@ class Dialog(Router, DialogProtocol):
             result: Any,
             manager: DialogManager,
     ) -> None:
+        context = manager.current_context()
         await self._process_callback(
             self.on_process_result, start_data, result, manager,
         )
+        if context.id == manager.current_context().id:
+            await self.windows[context.state].process_result(
+                start_data, result, manager,
+            )
 
     def include_router(self, router: Router) -> Router:
         raise TypeError("Dialog cannot include routers")
 
-    async def process_close(self, result: Any, manager: DialogManager):
+    async def process_close(
+            self, result: Any, manager: DialogManager,
+    ) -> None:
         await self._process_callback(self.on_close, result, manager)
 
     def find(self, widget_id) -> Optional[W]:

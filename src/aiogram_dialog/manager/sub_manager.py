@@ -40,27 +40,30 @@ class SubManager(DialogManager):
         return self.current_context().dialog_data
 
     @property
-    def start_data(self) -> Dict:
+    def start_data(self) -> Data:
         """Start data for current context."""
         return self.manager.start_data
 
-    def current_context(self) -> Optional[Context]:
+    def current_context(self) -> Context:
         context = self.manager.current_context()
         data = context.widget_data.setdefault(self.widget_id, {})
         row_data = data.setdefault(self.item_id, {})
         return dataclasses.replace(context, widget_data=row_data)
 
+    def has_context(self) -> bool:
+        return self.manager.has_context()
+
     def is_preview(self) -> bool:
         return self.manager.is_preview()
 
-    def current_stack(self) -> Optional[Stack]:
+    def current_stack(self) -> Stack:
         return self.manager.current_stack()
 
     async def close_manager(self) -> None:
         return await self.manager.close_manager()
 
-    async def show(self) -> Message:
-        return await self.manager.show()
+    async def show(self, show_mode: Optional[ShowMode] = None) -> Message:
+        return await self.manager.show(show_mode)
 
     async def answer_callback(self) -> None:
         return await self.manager.answer_callback()
@@ -88,31 +91,43 @@ class SubManager(DialogManager):
     def show_mode(self, show_mode: ShowMode) -> None:
         self.manager.show_mode = show_mode
 
-    async def next(self) -> None:
-        await self.manager.next()
+    async def next(self, show_mode: Optional[ShowMode] = None) -> None:
+        await self.manager.next(show_mode)
 
-    async def back(self) -> None:
-        await self.manager.back()
+    async def back(self, show_mode: Optional[ShowMode] = None) -> None:
+        await self.manager.back(show_mode)
 
-    async def done(self, result: Any = None) -> None:
-        await self.manager.done(result=result)
+    async def done(
+            self,
+            result: Any = None,
+            show_mode: Optional[ShowMode] = None,
+    ) -> None:
+        await self.manager.done(result, show_mode)
 
     async def mark_closed(self) -> None:
         await self.manager.mark_closed()
 
     async def start(self, state: State, data: Data = None,
                     mode: StartMode = StartMode.NORMAL,
-                    show_mode: ShowMode = ShowMode.AUTO) -> None:
+                    show_mode: Optional[ShowMode] = None) -> None:
         await self.manager.start(
             state=state, data=data, mode=mode, show_mode=show_mode,
         )
 
-    async def switch_to(self, state: State) -> None:
-        await self.manager.switch_to(state)
+    async def switch_to(
+            self,
+            state: State,
+            show_mode: Optional[ShowMode] = None,
+    ) -> None:
+        await self.manager.switch_to(state, show_mode)
 
-    async def update(self, data: Dict) -> None:
+    async def update(
+            self,
+            data: Dict,
+            show_mode: Optional[ShowMode] = None,
+    ) -> None:
         self.current_context().dialog_data.update(data)
-        await self.show()
+        await self.show(show_mode)
 
     def bg(self, user_id: Optional[int] = None, chat_id: Optional[int] = None,
            stack_id: Optional[str] = None,

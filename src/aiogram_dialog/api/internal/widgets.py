@@ -1,26 +1,32 @@
+from abc import abstractmethod
 from typing import (
     Any, Awaitable, Callable, Dict, List, Optional, Protocol,
-    runtime_checkable,
+    runtime_checkable, Union,
 )
 
-from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
+from aiogram.types import (
+    CallbackQuery, InlineKeyboardButton, KeyboardButton, Message,
+)
 
 from aiogram_dialog import DialogManager
-from aiogram_dialog.api.entities import MediaAttachment
+from aiogram_dialog.api.entities import MarkupVariant, MediaAttachment
 from aiogram_dialog.api.protocols import DialogProtocol
 
 
 @runtime_checkable
 class Widget(Protocol):
+    @abstractmethod
     def managed(self, manager: DialogManager) -> Any:
         raise NotImplementedError
 
+    @abstractmethod
     def find(self, widget_id: str) -> Optional["Widget"]:
         raise NotImplementedError
 
 
 @runtime_checkable
 class TextWidget(Widget, Protocol):
+    @abstractmethod
     async def render_text(
             self, data: Dict, manager: DialogManager,
     ) -> str:
@@ -28,14 +34,20 @@ class TextWidget(Widget, Protocol):
         raise NotImplementedError
 
 
+ButtonVariant = Union[InlineKeyboardButton, KeyboardButton]
+RawKeyboard = List[List[ButtonVariant]]
+
+
 @runtime_checkable
 class KeyboardWidget(Widget, Protocol):
+    @abstractmethod
     async def render_keyboard(
             self, data: Dict, manager: DialogManager,
-    ) -> List[List[InlineKeyboardButton]]:
+    ) -> RawKeyboard:
         """Create Inline keyboard contents."""
         raise NotImplementedError
 
+    @abstractmethod
     async def process_callback(
             self, callback: CallbackQuery, dialog: DialogProtocol,
             manager: DialogManager,
@@ -52,8 +64,9 @@ class KeyboardWidget(Widget, Protocol):
 
 @runtime_checkable
 class MediaWidget(Widget, Protocol):
+    @abstractmethod
     async def render_media(
-            self, data: Any, manager: DialogManager,
+            self, data: dict, manager: DialogManager,
     ) -> Optional[MediaAttachment]:
         """Create media attachment."""
         raise NotImplementedError
@@ -61,6 +74,7 @@ class MediaWidget(Widget, Protocol):
 
 @runtime_checkable
 class InputWidget(Widget, Protocol):
+    @abstractmethod
     async def process_message(
             self, message: Message, dialog: DialogProtocol,
             manager: DialogManager,
@@ -76,3 +90,13 @@ class InputWidget(Widget, Protocol):
 
 
 DataGetter = Callable[..., Awaitable[Dict]]
+
+
+@runtime_checkable
+class MarkupFactory(Protocol):
+    @abstractmethod
+    async def render_markup(
+            self, data: dict, manager: DialogManager, keyboard: RawKeyboard,
+    ) -> MarkupVariant:
+        """Render reply_markup using prepared keyboard."""
+        raise NotImplementedError

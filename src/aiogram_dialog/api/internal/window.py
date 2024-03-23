@@ -1,3 +1,4 @@
+from abc import abstractmethod
 from typing import (
     Any,
     Dict,
@@ -5,23 +6,27 @@ from typing import (
 )
 
 from aiogram.fsm.state import State
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, Message
 
-from aiogram_dialog.api.entities import NewMessage
+from aiogram_dialog.api.entities import Data, NewMessage
 from aiogram_dialog.api.protocols import DialogProtocol
 from .manager import DialogManager
+from .widgets import MarkupVariant
 
 
 class WindowProtocol(Protocol):
+    @abstractmethod
     async def render_text(self, data: Dict,
                           manager: DialogManager) -> str:
         raise NotImplementedError
 
+    @abstractmethod
     async def render_kbd(
             self, data: Dict, manager: DialogManager,
-    ) -> InlineKeyboardMarkup:
+    ) -> MarkupVariant:
         raise NotImplementedError
 
+    @abstractmethod
     async def load_data(
             self,
             dialog: "DialogProtocol",
@@ -29,22 +34,32 @@ class WindowProtocol(Protocol):
     ) -> Dict:
         raise NotImplementedError
 
+    @abstractmethod
     async def process_message(
             self,
             message: Message,
             dialog: "DialogProtocol",
             manager: DialogManager,
-    ):
+    ) -> None:
         raise NotImplementedError
 
+    @abstractmethod
     async def process_callback(
             self,
             callback: CallbackQuery,
             dialog: "DialogProtocol",
             manager: DialogManager,
-    ):
+    ) -> None:
         raise NotImplementedError
 
+    @abstractmethod
+    async def process_result(
+            self, start_data: Data, result: Any,
+            manager: "DialogManager",
+    ) -> None:
+        raise NotImplementedError
+
+    @abstractmethod
     async def render(
             self,
             dialog: "DialogProtocol",
@@ -52,8 +67,10 @@ class WindowProtocol(Protocol):
     ) -> NewMessage:
         raise NotImplementedError
 
+    @abstractmethod
     def get_state(self) -> State:
         raise NotImplementedError
 
+    @abstractmethod
     def find(self, widget_id) -> Any:
         raise NotImplementedError

@@ -8,6 +8,7 @@ from aiogram.types import (
     Update,
     User,
 )
+from pydantic import ConfigDict
 
 from .modes import (
     ShowMode,
@@ -25,25 +26,22 @@ class DialogAction(Enum):
 
 
 class DialogUpdateEvent(TelegramObject):
-    class Config:
-        """Pydantic config for custom event."""
-
-        arbitrary_types_allowed = True
-        use_enum_values = False
-        copy_on_model_validation = False
-
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True,
+        use_enum_values=False,
+    )
     from_user: User
     chat: Chat
     action: DialogAction
     data: Any
     intent_id: Optional[str]
     stack_id: Optional[str]
+    show_mode: Optional[ShowMode] = None
 
 
 class DialogStartEvent(DialogUpdateEvent):
     new_state: State
     mode: StartMode
-    show_mode: ShowMode
 
 
 class DialogSwitchEvent(DialogUpdateEvent):

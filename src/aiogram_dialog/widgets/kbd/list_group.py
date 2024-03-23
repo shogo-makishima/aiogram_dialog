@@ -1,48 +1,37 @@
-from operator import itemgetter
-from typing import Any, Callable, Dict, List, Optional, Sequence, Union
+from typing import Any, Callable, Dict, Optional, Union
 
-from aiogram.types import CallbackQuery, InlineKeyboardButton
+from aiogram.types import CallbackQuery
 
-from aiogram_dialog.api.internal import Widget
+from aiogram_dialog.api.internal import RawKeyboard, Widget
 from aiogram_dialog.api.protocols import (
     DialogManager, DialogProtocol,
 )
 from aiogram_dialog.manager.sub_manager import SubManager
 from aiogram_dialog.widgets.common import ManagedWidget, WhenCondition
 from .base import Keyboard
+from ..common.items import get_items_getter, ItemsGetterVariant
 
-ItemsGetter = Callable[[Dict], Sequence]
 ItemIdGetter = Callable[[Any], Union[str, int]]
-
-
-def get_identity(items: Sequence) -> ItemsGetter:
-    def identity(data) -> Sequence:
-        return items
-
-    return identity
 
 
 class ListGroup(Keyboard):
     def __init__(
             self,
             *buttons: Keyboard,
-            id: Optional[str] = None,
+            id: str,
             item_id_getter: ItemIdGetter,
-            items: Union[str, Sequence],
+            items: ItemsGetterVariant,
             when: WhenCondition = None,
     ):
         super().__init__(id=id, when=when)
         self.buttons = buttons
         self.item_id_getter = item_id_getter
-        if isinstance(items, str):
-            self.items_getter = itemgetter(items)
-        else:
-            self.items_getter = get_identity(items)
+        self.items_getter = get_items_getter(items)
 
     async def _render_keyboard(
             self, data: Dict, manager: DialogManager,
-    ) -> List[List[InlineKeyboardButton]]:
-        kbd: List[List[InlineKeyboardButton]] = []
+    ) -> RawKeyboard:
+        kbd: RawKeyboard = []
         for pos, item in enumerate(self.items_getter(data)):
             kbd.extend(await self._render_item(pos, item, data, manager))
         return kbd
@@ -53,8 +42,8 @@ class ListGroup(Keyboard):
             item: Any,
             data: Dict,
             manager: DialogManager,
-    ) -> List[List[InlineKeyboardButton]]:
-        kbd: List[List[InlineKeyboardButton]] = []
+    ) -> RawKeyboard:
+        kbd: RawKeyboard = []
         data = {"data": data, "item": item, "pos": pos + 1, "pos0": pos}
         item_id = str(self.item_id_getter(item))
         sub_manager = SubManager(
@@ -91,9 +80,9 @@ class ListGroup(Keyboard):
             manager: DialogManager,
     ) -> bool:
         item_id, callback_data = data.split(":", maxsplit=1)
-        c_vars = vars(callback)
-        c_vars["data"] = callback_data
-        callback = CallbackQuery(**c_vars)
+        callback = callback.model_copy(update={
+            "data": callback_data,
+        })
         sub_manager = SubManager(
             widget=self,
             manager=manager,
@@ -104,12 +93,13 @@ class ListGroup(Keyboard):
             if await b.process_callback(callback, dialog, sub_manager):
                 return True
 
-    def managed(self, manager: DialogManager):
-        return ManagedListGroupAdapter(self, manager)
+    def managed(self, manager: DialogManager) -> "ManagedListGroup":
+        return ManagedListGroup(self, manager)
 
 
-class ManagedListGroupAdapter(ManagedWidget[ListGroup]):
+class ManagedListGroup(ManagedWidget[ListGroup]):
     def find_for_item(self, widget_id: str, item_id: str) -> Optional[Any]:
+        """Find widget for specific item_id."""
         widget = self.widget.find(widget_id)
         if widget:
             return widget.managed(

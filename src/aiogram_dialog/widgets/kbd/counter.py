@@ -1,8 +1,10 @@
-from typing import Awaitable, Callable, Dict, List, Optional, Union
+from abc import abstractmethod
+from typing import Dict, Optional, Protocol, Union
 
 from aiogram.types import CallbackQuery, InlineKeyboardButton
 
 from aiogram_dialog.api.entities import ChatEvent
+from aiogram_dialog.api.internal import RawKeyboard
 from aiogram_dialog.api.protocols import DialogManager, DialogProtocol
 from aiogram_dialog.widgets.common import ManagedWidget, WhenCondition
 from aiogram_dialog.widgets.kbd.base import Keyboard
@@ -12,14 +14,19 @@ from aiogram_dialog.widgets.widget_event import (
     WidgetEventProcessor,
 )
 
-OnClick = Callable[
-    [ChatEvent, "ManagedCounterAdapter", DialogManager],
-    Awaitable,
-]
-OnValueChanged = Callable[
-    [ChatEvent, "ManagedCounterAdapter", DialogManager],
-    Awaitable,
-]
+
+class OnCounterEvent(Protocol):
+    @abstractmethod
+    async def __call__(
+            self,
+            event: ChatEvent,
+            counter: "ManagedCounter",  # noqa: F841
+            dialog_manager: DialogManager,
+    ):
+        raise NotImplementedError
+
+
+OnCounterEventVariant = Union[OnCounterEvent, WidgetEventProcessor, None]
 
 PLUS_TEXT = Const("+")
 MINUS_TEXT = Const("-")
@@ -27,6 +34,13 @@ DEFAULT_COUNTER_TEXT = Format("{value:g}")
 
 
 class Counter(Keyboard):
+    """
+    Counter widget.
+
+    Used to represent number with increment/decrement buttons
+    To remove any button set its text to `None`
+    """
+
     def __init__(
             self,
             id: str,
@@ -38,12 +52,30 @@ class Counter(Keyboard):
             increment: float = 1,
             default: float = 0,
             cycle: bool = False,
-            on_click: Union[OnClick, WidgetEventProcessor, None] = None,
-            on_value_changed: Union[
-                OnValueChanged, WidgetEventProcessor, None,
-            ] = None,
+            on_click: OnCounterEventVariant = None,
+            on_text_click: OnCounterEventVariant = None,
+            on_value_changed: OnCounterEventVariant = None,
             when: WhenCondition = None,
-    ):
+    ) -> None:
+        """
+        Init counter widget.
+
+        :param id: ID of widget
+        :param plus: Text to render `+`-button. Set `None` to disable
+        :param minus: Text to render `-`-button. Set `None` to disable
+        :param text: Text to render button with current value. \
+        Set `None` to disable
+        :param min_value: Minimal allowed value
+        :param max_value: Maximum allowed value
+        :param increment: Step used to increment
+        :param default: Default value
+        :param cycle: Whether cycle values on overflow
+        :param on_click: Callback to process any click
+        :param on_text_click: Callback to process click on `text`-button
+        :param on_value_changed: Callback to process value changes, \
+        regardless of the reason
+        :param when: Condition when to show widget
+        """
         super().__init__(id=id, when=when)
         self.plus = plus
         self.minus = minus
@@ -55,16 +87,15 @@ class Counter(Keyboard):
         self.cycle = cycle
         self.on_click = ensure_event_processor(on_click)
         self.on_value_changed = ensure_event_processor(on_value_changed)
+        self.on_text_click = ensure_event_processor(on_text_click)
 
     def get_value(self, manager: DialogManager) -> float:
-        return manager.current_context().widget_data.get(
-            self.widget_id, self.default,
-        )
+        return self.get_widget_data(manager, self.default)
 
     async def set_value(self, manager: DialogManager,
                         value: float) -> None:
         if self.min <= value <= self.max:
-            manager.current_context().widget_data[self.widget_id] = value
+            self.set_widget_data(manager, value)
             await self.on_value_changed.process_event(
                 manager.event,
                 self.managed(manager),
@@ -75,7 +106,7 @@ class Counter(Keyboard):
             self,
             data: Dict,
             manager: DialogManager,
-    ) -> List[List[InlineKeyboardButton]]:
+    ) -> RawKeyboard:
         row = []
         if self.minus:
             minus = await self.minus.render_text(data, manager)
@@ -128,18 +159,21 @@ class Counter(Keyboard):
             if value < self.min and self.cycle:
                 value = self.max
             await self.set_value(manager, value)
+        elif data == "":
+            await self.on_text_click.process_event(
+                callback, self.managed(manager), manager,
+            )
         return True
 
-    def get_page(self, manager: DialogManager) -> int:
-        return manager.current_context().widget_data.get(self.widget_id, 0)
-
     def managed(self, manager: DialogManager):
-        return ManagedCounterAdapter(self, manager)
+        return ManagedCounter(self, manager)
 
 
-class ManagedCounterAdapter(ManagedWidget[Counter]):
+class ManagedCounter(ManagedWidget[Counter]):
     def get_value(self) -> float:
+        """Get current value set in counter."""
         return self.widget.get_value(self.manager)
 
     async def set_value(self, value: float) -> None:
+        """Change current counter value."""
         await self.widget.set_value(self.manager, value)

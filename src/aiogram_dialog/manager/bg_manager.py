@@ -19,7 +19,7 @@ from aiogram_dialog.api.entities import (
 from aiogram_dialog.api.internal import (
     FakeChat, FakeUser,
 )
-from aiogram_dialog.api.protocols import BaseDialogManager
+from aiogram_dialog.api.protocols import BaseDialogManager, BgManagerFactory
 from aiogram_dialog.manager.updater import Updater
 from aiogram_dialog.utils import is_chat_loaded, is_user_loaded
 
@@ -111,11 +111,15 @@ class BgManager(BaseDialogManager):
                 )
                 self.user = chat_member.user
 
-    async def done(self, result: Any = None) -> None:
+    async def done(
+            self,
+            result: Any = None,
+            show_mode: Optional[ShowMode] = None,
+    ) -> None:
         await self._load()
         await self._notify(
             DialogUpdateEvent(
-                action=DialogAction.DONE, data=result,
+                action=DialogAction.DONE, data=result, show_mode=show_mode,
                 **self._base_event_params(),
             ),
         )
@@ -125,7 +129,7 @@ class BgManager(BaseDialogManager):
             state: State,
             data: Data = None,
             mode: StartMode = StartMode.NORMAL,
-            show_mode: ShowMode = ShowMode.AUTO,
+            show_mode: Optional[ShowMode] = None,
     ) -> None:
         await self._load()
         await self._notify(
@@ -139,22 +143,59 @@ class BgManager(BaseDialogManager):
             ),
         )
 
-    async def switch_to(self, state: State) -> None:
+    async def switch_to(
+            self,
+            state: State,
+            show_mode: Optional[ShowMode] = None,
+    ) -> None:
         await self._load()
         await self._notify(
             DialogSwitchEvent(
                 action=DialogAction.SWITCH,
                 data={},
                 new_state=state,
+                show_mode=show_mode,
                 **self._base_event_params(),
             ),
         )
 
-    async def update(self, data: Dict) -> None:
+    async def update(
+            self,
+            data: Dict,
+            show_mode: Optional[ShowMode] = None,
+    ) -> None:
         await self._load()
         await self._notify(
             DialogUpdateEvent(
-                action=DialogAction.UPDATE, data=data,
+                action=DialogAction.UPDATE, data=data, show_mode=show_mode,
                 **self._base_event_params(),
             ),
+        )
+
+
+class BgManagerFactoryImpl(BgManagerFactory):
+    def __init__(self, router: Router):
+        self._router = router
+
+    def bg(
+            self,
+            bot: Bot,
+            user_id: int,
+            chat_id: int,
+            stack_id: Optional[str] = None,
+            load: bool = False,
+    ) -> "BaseDialogManager":
+        chat = FakeChat(id=chat_id, type="")
+        user = FakeUser(id=user_id, is_bot=False, first_name="")
+        if stack_id is None:
+            stack_id = DEFAULT_STACK_ID
+
+        return BgManager(
+            user=user,
+            chat=chat,
+            bot=bot,
+            router=self._router,
+            intent_id=None,
+            stack_id=stack_id,
+            load=load,
         )

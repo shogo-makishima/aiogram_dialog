@@ -8,7 +8,7 @@ from diagrams.custom import Custom
 
 from aiogram_dialog import Dialog
 from aiogram_dialog.api.internal import WindowProtocol
-from aiogram_dialog.manager.setup import collect_dialogs
+from aiogram_dialog.setup import collect_dialogs
 from aiogram_dialog.widgets.kbd import (
     Back,
     Cancel,
@@ -104,7 +104,7 @@ def render_transitions(
             with Cluster(dialog.states_group_name()):
                 for window in dialog.windows.values():
                     nodes[window.get_state()] = Custom(
-                        icon_path=ICON_PATH, label=window.get_state().state,
+                        icon_path=ICON_PATH, label=window.get_state()._state,
                     )
 
         starts = []

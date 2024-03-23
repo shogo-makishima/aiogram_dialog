@@ -1,7 +1,8 @@
 from aiogram_dialog import (
-    Dialog, Window, )
+    Dialog, Window,
+)
 from aiogram_dialog.widgets.kbd import (
-    SwitchTo, Select, Button, Row, Column, Group,
+    Button, Column, Group, Row, Select, SwitchTo,
 )
 from aiogram_dialog.widgets.text import Const, Format
 from . import states
@@ -25,17 +26,17 @@ BUTTON = Button(
 menu_window = Window(
     Const("Different keyboard layouts."),
     SwitchTo(
-        text=Const("Row"),
+        text=Const("↔️ Row"),
         id="row",
         state=states.Layouts.ROW,
     ),
     SwitchTo(
-        text=Const("Column"),
+        text=Const("↕️ Column"),
         id="column",
         state=states.Layouts.COLUMN,
     ),
     SwitchTo(
-        text=Const("Group"),
+        text=Const("↩️ Group"),
         id="group",
         state=states.Layouts.GROUP,
     ),

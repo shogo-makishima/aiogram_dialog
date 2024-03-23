@@ -8,7 +8,7 @@ from aiogram_dialog.api.entities import DIALOG_EVENT_NAME
 from aiogram_dialog.api.exceptions import UnregisteredDialogError
 from aiogram_dialog.api.internal import DialogManagerFactory
 from aiogram_dialog.api.protocols import (
-    DialogProtocol, DialogRegistryProtocol,
+    BgManagerFactory, DialogProtocol, DialogRegistryProtocol,
     MediaIdStorageProtocol, MessageManagerProtocol,
 )
 from aiogram_dialog.context.intent_middleware import (
@@ -17,10 +17,14 @@ from aiogram_dialog.context.intent_middleware import (
     IntentMiddlewareFactory,
 )
 from aiogram_dialog.context.media_storage import MediaIdStorage
-from .manager_factory import DefaultManagerFactory
-from .manager_middleware import ManagerMiddleware
-from .message_manager import MessageManager
-from .update_handler import handle_update
+from aiogram_dialog.manager.bg_manager import BgManagerFactoryImpl
+from aiogram_dialog.manager.manager_factory import DefaultManagerFactory
+from aiogram_dialog.manager.manager_middleware import (
+    BgFactoryMiddleware, ManagerMiddleware,
+)
+from aiogram_dialog.manager.message_manager import MessageManager
+from aiogram_dialog.manager.update_handler import handle_update
+from .about import about_dialog
 
 
 def _setup_event_observer(router: Router) -> None:
@@ -39,7 +43,7 @@ class DialogRegistry(DialogRegistryProtocol):
         self.router = router
         self._loaded = False
         self._dialogs = {}
-        self._state_groups = {}
+        self._states_groups = {}
 
     def _ensure_loaded(self):
         if not self._loaded:
@@ -55,14 +59,14 @@ class DialogRegistry(DialogRegistryProtocol):
                 f" (looking by state `{state}`)",
             ) from e
 
-    def state_groups(self) -> Dict[str, Type[StatesGroup]]:
+    def states_groups(self) -> Dict[str, Type[StatesGroup]]:
         self._ensure_loaded()
-        return self._state_groups
+        return self._states_groups
 
     def refresh(self):
         dialogs = collect_dialogs(self.router)
         self._dialogs = {d.states_group(): d for d in dialogs}
-        self._state_groups = {
+        self._states_groups = {
             d.states_group_name(): d.states_group()
             for d in self._dialogs.values()
         }
@@ -81,6 +85,7 @@ def _startup_callback(
 def _register_middleware(
         router: Router,
         dialog_manager_factory: DialogManagerFactory,
+        bg_manager_factory: BgManagerFactory,
 ):
     registry = DialogRegistry(router)
     manager_middleware = ManagerMiddleware(
@@ -93,10 +98,13 @@ def _register_middleware(
     router.startup.register(_startup_callback(registry))
     update_handler = router.observers[DIALOG_EVENT_NAME]
 
+    router.errors.middleware(IntentErrorMiddleware(registry=registry))
+
     router.message.middleware(manager_middleware)
     router.callback_query.middleware(manager_middleware)
     update_handler.middleware(manager_middleware)
     router.my_chat_member.middleware(manager_middleware)
+    router.chat_join_request.middleware(manager_middleware)
     router.errors.middleware(manager_middleware)
 
     router.message.outer_middleware(intent_middleware.process_message)
@@ -109,13 +117,19 @@ def _register_middleware(
     router.my_chat_member.outer_middleware(
         intent_middleware.process_my_chat_member,
     )
+    router.chat_join_request.outer_middleware(
+        intent_middleware.process_chat_join_request,
+    )
 
     router.message.middleware(context_saver_middleware)
     router.callback_query.middleware(context_saver_middleware)
     update_handler.middleware(context_saver_middleware)
     router.my_chat_member.middleware(context_saver_middleware)
+    router.chat_join_request.middleware(context_saver_middleware)
 
-    router.errors.middleware(IntentErrorMiddleware(state_groups={}))
+    bg_factory_middleware = BgFactoryMiddleware(bg_manager_factory)
+    for observer in router.observers.values():
+        observer.outer_middleware(bg_factory_middleware)
 
 
 def _prepare_dialog_manager_factory(
@@ -142,22 +156,31 @@ def collect_dialogs(router: Router) -> Iterable[DialogProtocol]:
         yield from collect_dialogs(sub_router)
 
 
+def _include_default_dialogs(router: Router):
+    router.include_router(about_dialog())
+
+
 def setup_dialogs(
         router: Router,
         *,
         dialog_manager_factory: Optional[DialogManagerFactory] = None,
         message_manager: Optional[MessageManagerProtocol] = None,
         media_id_storage: Optional[MediaIdStorageProtocol] = None,
-):
+) -> BgManagerFactory:
     _setup_event_observer(router)
     _register_event_handler(router, handle_update)
+    _include_default_dialogs(router)
 
     dialog_manager_factory = _prepare_dialog_manager_factory(
         dialog_manager_factory=dialog_manager_factory,
         message_manager=message_manager,
         media_id_storage=media_id_storage,
     )
+    bg_manager_factory = BgManagerFactoryImpl(router)
     _register_middleware(
         router=router,
         dialog_manager_factory=dialog_manager_factory,
+        bg_manager_factory=bg_manager_factory,
+
     )
+    return bg_manager_factory

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from abc import abstractmethod
 from typing import (
     Any, Callable, Generic, Optional, Protocol, TypeVar, Union,
 )
@@ -20,22 +21,27 @@ TypeFactory = Callable[[str], T]
 
 
 class OnSuccess(Protocol[T]):
+    @abstractmethod
     async def __call__(
             self,
             message: Message,
-            widget: TextInput,
+            widget: ManagedTextInput[T],
             dialog_manager: DialogManager,
             data: T,
+            /,
     ) -> Any:
         raise NotImplementedError
 
 
 class OnError(Protocol[T]):
+    @abstractmethod
     async def __call__(
             self,
             message: Message,
-            widget: TextInput,
+            widget: ManagedTextInput[T],
             dialog_manager: DialogManager,
+            error: ValueError,
+            /,
     ) -> Any:
         raise NotImplementedError
 
@@ -50,7 +56,7 @@ class TextInput(BaseInput, Generic[T]):
             filter: Optional[Callable[..., Any]] = None,
     ):
         super().__init__(id=id)
-        if filter:
+        if filter is not None:
             self.filter = FilterObject(filter)
         else:
             self.filter = None
@@ -63,7 +69,7 @@ class TextInput(BaseInput, Generic[T]):
             message: Message,
             dialog: DialogProtocol,
             manager: DialogManager,
-    ):
+    ) -> bool:
         if message.content_type != ContentType.TEXT:
             return False
         if self.filter and not await self.filter.call(
@@ -72,22 +78,29 @@ class TextInput(BaseInput, Generic[T]):
             return False
         try:
             value = self.type_factory(message.text)
-        except ValueError:
-            await self.on_error.process_event(message, self, manager)
+        except ValueError as err:
+            await self.on_error.process_event(
+                message, self.managed(manager), manager, err,
+            )
         else:
             # store original text
             self.set_widget_data(manager, message.text)
-            await self.on_success.process_event(message, self, manager, value)
+            await self.on_success.process_event(
+                message, self.managed(manager), manager, value,
+            )
         return True
 
-    def get_value(self, manager: DialogManager) -> T:
-        return self.type_factory(self.get_widget_data(manager, None))
+    def get_value(self, manager: DialogManager) -> Optional[T]:
+        data = self.get_widget_data(manager, None)
+        if data is None:
+            return None
+        return self.type_factory(data)
 
     def managed(self, manager: DialogManager):
-        return ManagedTextInputAdapter(self, manager)
+        return ManagedTextInput(self, manager)
 
 
-class ManagedTextInputAdapter(ManagedWidget[TextInput[T]], Generic[T]):
+class ManagedTextInput(ManagedWidget[TextInput[T]], Generic[T]):
     def get_value(self) -> T:
         """Get last input data stored by widget."""
         return self.widget.get_value(self.manager)

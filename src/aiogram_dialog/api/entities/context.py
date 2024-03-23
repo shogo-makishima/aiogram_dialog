@@ -18,9 +18,9 @@ class Context:
     path: DataDict = field(compare=False, default_factory=list)
 
     @property
-    def id(self):
+    def id(self) -> str:
         return self._intent_id
 
     @property
-    def stack_id(self):
+    def stack_id(self) -> str:
         return self._stack_id

@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
-from typing import Awaitable, Callable, Dict, List, Optional, Union
+from typing import Awaitable, Callable, Dict, Optional, Union
 
 from aiogram.types import CallbackQuery, InlineKeyboardButton
 
 from aiogram_dialog.api.entities import ChatEvent
+from aiogram_dialog.api.internal import RawKeyboard
 from aiogram_dialog.api.protocols import DialogManager, DialogProtocol
 from aiogram_dialog.widgets.common import ManagedWidget, WhenCondition
 from aiogram_dialog.widgets.text import Case, Text
@@ -14,7 +15,7 @@ from aiogram_dialog.widgets.widget_event import (
 from .base import Keyboard
 
 OnStateChanged = Callable[
-    [ChatEvent, "ManagedCheckboxAdapter", DialogManager], Awaitable,
+    [ChatEvent, "ManagedCheckbox", DialogManager], Awaitable,
 ]
 OnStateChangedVariant = Union[
     OnStateChanged, WidgetEventProcessor, None,
@@ -41,7 +42,7 @@ class BaseCheckbox(Keyboard, ABC):
 
     async def _render_keyboard(
             self, data: Dict, manager: DialogManager,
-    ) -> List[List[InlineKeyboardButton]]:
+    ) -> RawKeyboard:
         checked = int(self.is_checked(manager))
         # store current checked status in callback data
         return [
@@ -117,11 +118,11 @@ class Checkbox(BaseCheckbox):
             event, self.managed(manager), manager,
         )
 
-    def managed(self, manager: DialogManager):
-        return ManagedCheckboxAdapter(self, manager)
+    def managed(self, manager: DialogManager) -> "ManagedCheckbox":
+        return ManagedCheckbox(self, manager)
 
 
-class ManagedCheckboxAdapter(ManagedWidget[Checkbox]):
+class ManagedCheckbox(ManagedWidget[Checkbox]):
     def is_checked(self) -> bool:
         return self.widget.is_checked(self.manager)
 

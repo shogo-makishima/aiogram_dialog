@@ -4,10 +4,11 @@
 [![Doc](https://readthedocs.org/projects/aiogram-dialog/badge/?version=latest&style=flat)](https://aiogram-dialog.readthedocs.io)
 [![downloads](https://img.shields.io/pypi/dm/aiogram_dialog.svg)](https://pypistats.org/packages/aiogram_dialog)
 [![license](https://img.shields.io/github/license/Tishka17/aiogram_dialog.svg)](https://github.com/Tishka17/aiogram_dialog/blob/master/LICENSE)
+[![license](https://img.shields.io/badge/💬-Telegram-blue)](https://t.me/aiogram_dialog)
 
 #### Version status:
-* v1.x - stable release, supports aiogram v2.x, bugfix only
-* v2.x - beta, future release, supports aiogram v3.x
+* v2.x - actual release, supports aiogram v3.x
+* v1.x - old release, supports aiogram v2.x, critical fix only
 
 ### About 
 `aiogram-dialog` is a framework for developing interactive messages and menus in your telegram bot like a normal GUI application.  
@@ -15,7 +16,7 @@
 It is inspired by ideas of Android SDK and other tools.
 
 Main ideas are:
-* **split data retriving, rendering and action processing** - you need nothing to do for showing same content after some actions, also you can show same data in multiple ways. 
+* **split data retrieving, rendering and action processing** - you need nothing to do for showing same content after some actions, also you can show same data in multiple ways. 
 * **reusable widgets**  - you can create calendar or multiselect at any point of your application without copy-pasting its internal logic  
 * **limited scope of context** - any dialog keeps some data until closed, multiple opened dialogs process their data separately
 
@@ -47,7 +48,7 @@ Each window consists of:
 
 * Text widgets. Render text of message.
 * Keyboard widgets. Render inline keyboard
-* Media widget. Renders media if neede
+* Media widget. Renders media if need
 * Message handler. Called when user sends a message when window is shown
 * Data getter functions (`getter=`). They load data from any source which can be used in text/keyboard
 * State. Used when switching between windows
@@ -56,7 +57,7 @@ Each window consists of:
 
 
 ```python
-from aiogram.filters.state import StatesGroup, State
+from aiogram.fsm.state import StatesGroup, State
 from aiogram_dialog.widgets.text import Format, Const
 from aiogram_dialog.widgets.kbd import Button
 from aiogram_dialog import Window
@@ -83,7 +84,7 @@ Window(
 Window itself can do nothing, just prepares message. To use it you need dialog:
 
 ```python
-from aiogram.filters.state import StatesGroup, State
+from aiogram.fsm.state import StatesGroup, State
 from aiogram_dialog import Dialog, Window
 
 
@@ -100,7 +101,7 @@ dialog = Dialog(
 
 > **Info:** All windows in a dialog MUST have states from then same `StatesGroup`
 
-After creating dialog you need to register it using `DialogRegistry`:
+After creating a dialog you need to register it into the Dispatcher and set it up using the `setup_dialogs` function:
 
 ```python
 from aiogram import Dispatcher
@@ -121,7 +122,7 @@ For example in `/start` command handler:
 async def user_start(message: Message, dialog_manager: DialogManager):
     await dialog_manager.start(MySG.first, mode=StartMode.RESET_STACK)
 
-dp.message.register(user_start, F.text == "/start")
+dp.message.register(user_start, CommandStart())
 ```
 
 > **Info:** Always set `mode=StartMode.RESET_STACK` in your top level start command. Otherwise, dialogs are stacked just as they do
